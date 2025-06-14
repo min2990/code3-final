@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>图片簇状布局</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: #000;
+      overflow: hidden;
+    }
+
+    /* 左侧文字区域 */
+    #side-text {
+      position: absolute;
+      top: 40%;
+      left: 3%;
+      width: 25vw;
+      color: #fff;
+      padding: 40px 20px;
+      box-sizing: border-box;
+      font-family: sans-serif;
+      z-index: 3;
+    }
+
+    #side-text h1 {
+      font-size: 2em;
+      margin-bottom: 0.5em;
+    }
+
+    #side-text p {
+      font-size: 1em;
+      line-height: 1.6;
+      opacity: 0.8;
+    }
+
+    /* 图片区域 */
+    #circle-area {
+      position: absolute;
+      top: 50%;
+      left: 25%;
+      width: 70vw;
+      height: 80vh;
+      transform: translateY(-50%);
+      z-index: 1;
+    }
+
+    #connection-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    iframe#p5-background {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -1;
+      border: none;
+    }
+
+    .image-item {
+      position: absolute;
+      object-fit: cover;
+      border-radius: 50%;
+      transition: transform 0.3s, box-shadow 0.3s;
+      cursor: pointer;
+      z-index: 2;
+    }
+
+    .image-item:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 12px 24px rgba(255, 255, 255, 0.5);
+    }
+
+    .image-item.selected {
+      box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+      backdrop-filter: blur(8px);
+      z-index: 3;
+    }
+
+    .waveform-preview {
+      position: absolute;
+      width: 250px;
+      height: auto;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(255,255,255,0.3);
+      background: rgba(255, 255, 255, 0.05);
+      padding: 4px;
+      z-index: 5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 背景层 -->
+  <iframe id="p5-background" src="p5-background.html"></iframe>
+
+  <!-- 左侧文字 -->
+  <div id="side-text">
+    <h1>Ecological Island</h1>
+    <p>Reconnecting the fragmented natural chain caused by urbanization, transforming old buildings into biodiversity hubs within the city.</p>
+  </div>
+
+  <!-- 右侧图片区域 -->
+  <div id="circle-area">
+    <canvas id="connection-canvas"></canvas>
+  </div>
+
+  <script>
+    const area = document.getElementById('circle-area');
+    const canvas = document.getElementById('connection-canvas');
+    const ctx = canvas.getContext('2d');
+    const imageCount = 95;
+    const minSize = 50;
+    const maxSize = 100;
+    const clusterCount = 20;
+    const dotsPerImage = 6;
+
+    function resizeCanvas() {
+      canvas.width = area.clientWidth;
+      canvas.height = area.clientHeight;
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    const clusters = Array.from({ length: clusterCount }, () => {
+      const r = Math.random() * 60 + 40;
+      const x = Math.random() * (canvas.width - 2 * r) + r;
+      const y = Math.random() * (canvas.height - 2 * r) + r;
+      return { x, y, r };
+    });
+
+    const placedPositions = [];
+    const dotPositions = [];
+
+    function isOverlapping(x, y, size) {
+      return placedPositions.some(pos => {
+        const dx = pos.x - x;
+        const dy = pos.y - y;
+        return Math.sqrt(dx * dx + dy * dy) < (pos.size + size) / 1.8;
+      });
+    }
+
+    for (let i = 0; i < imageCount; i++) {
+      const img = document.createElement('img');
+      const cluster = clusters[Math.floor(Math.random() * clusterCount)];
+      const size = Math.floor(Math.random() * (maxSize - minSize + 1)) + minSize;
+      let x, y, attempts = 0;
+
+      do {
+        const angle = Math.random() * 2 * Math.PI;
+        const dist = Math.random() * cluster.r;
+        let xRaw = cluster.x + dist * Math.cos(angle);
+        let yRaw = cluster.y + dist * Math.sin(angle);
+
+        x = Math.max(size / 2, Math.min(canvas.width - size / 2, xRaw));
+        y = Math.max(size / 2, Math.min(canvas.height - size / 2, yRaw));
+
+        attempts++;
+      } while (isOverlapping(x, y, size) && attempts < 20);
+
+      placedPositions.push({ x, y, size });
+
+      const index = i + 1;
+      img.src = `p1_resized/${index}.jpg`;
+      img.className = 'image-item';
+      img.width = size;
+      img.height = size;
+      img.style.left = `${x - size / 2}px`;
+      img.style.top = `${y - size / 2}px`;
+
+      img.addEventListener('click', () => {
+        new Audio(`sound/${index}.wav`).play();
+
+        // 清除其他图片选中和波形图
+        document.querySelectorAll('.image-item.selected').forEach(el => el.classList.remove('selected'));
+        document.querySelectorAll('.waveform-preview').forEach(el => el.remove());
+
+        // 当前图片高亮
+        img.classList.add('selected');
+
+        // 创建波形图
+        const waveform = document.createElement('img');
+        waveform.src = `waveform_images/${index}.png`;
+        waveform.className = 'waveform-preview';
+
+        // 计算显示位置（图片右上方）
+        const offsetX = size / 2 + 10;
+        const offsetY = -size / 2 + 10;
+        waveform.style.left = `${parseFloat(img.style.left) + offsetX}px`;
+        waveform.style.top = `${parseFloat(img.style.top) + offsetY}px`;
+
+        area.appendChild(waveform);
+      });
+
+      area.appendChild(img);
+
+      for (let j = 0; j < dotsPerImage; j++) {
+        const angle = (j / dotsPerImage) * 2 * Math.PI;
+        const rOffset = size / 2 + 10 + Math.random() * 10;
+        const dx = x + rOffset * Math.cos(angle);
+        const dy = y + rOffset * Math.sin(angle);
+        const dr = Math.random() * 4 + 2;
+        dotPositions.push({ x: dx, y: dy, r: dr, depth: Math.random() });
+      }
+    }
+
+    window.onload = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 图片之间连线
+      for (let i = 0; i < placedPositions.length; i++) {
+        for (let j = i + 1; j < placedPositions.length; j++) {
+          const a = placedPositions[i], b = placedPositions[j];
+          const dx = a.x - b.x, dy = a.y - b.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 300) {
+            ctx.strokeStyle = `rgba(136, 136, 136, ${1 - dist / 300})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // 小圆点
+      dotPositions.forEach(dot => {
+        ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + 0.7 * dot.depth})`;
+        ctx.beginPath();
+        ctx.arc(dot.x, dot.y, dot.r, 0, 2 * Math.PI);
+        ctx.fill();
+      });
+
+      // 圆点连线
+      for (let i = 0; i < dotPositions.length; i++) {
+        for (let j = i + 1; j < dotPositions.length; j++) {
+          const a = dotPositions[i], b = dotPositions[j];
+          const dx = a.x - b.x, dy = a.y - b.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 180) {
+            const alpha = 0.3 + 0.5 * ((a.depth + b.depth) / 2);
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+        }
+      }
+    };
+  </script>
+</body>
+</html>
